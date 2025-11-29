@@ -197,46 +197,6 @@ Example:
 
 ---
 
-## Troubleshooting
-
-### Bot doesn't respond
-- Check if bot is running: `ps aux | grep bot.py`
-- Check bot token is correct
-- Verify bot is not blocked by user
-
-### "Chat not found" error
-- Ensure bot is added to the group as admin
-- Verify `group_id` is correct (negative number)
-- Check bot has permission to create invite links
-
-### Phone validation fails
-- Ensure number is 10 digits
-- Must start with 6, 7, 8, or 9
-- Try with country code: +91XXXXXXXXXX
-
-### User can't join group
-- Check if user has already joined 2 groups
-- Verify 24-hour cooldown has passed
-- Ensure coaching selection matches
-
----
-
-## Security Considerations
-
-1. **Never commit bot token to Git**
-   - Use environment variables
-   - Add `.env` to `.gitignore`
-
-2. **Protect user data**
-   - `data/users.json` contains phone numbers
-   - Add `data/` to `.gitignore`
-   - Implement proper access controls
-
-3. **Bot permissions**
-   - Only grant necessary admin permissions
-   - Regularly audit group members
-
----
 
 ## License
 
