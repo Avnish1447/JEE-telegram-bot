@@ -44,7 +44,6 @@ def log_join_attempt(telegram_id, username,coaching,batch,status):
     with open(TEXT_LOG_FILE, "a", encoding="utf-8") as f:
         f.write(text_line)
 
-
 #EXAMPLE OUTPUT
 # 2025-02-10 16:42:22 | user_id=12345 | username=john | coaching=pw | batch=batch_1 | status=attempt
 # 2025-02-10 16:42:23 | user_id=12345 | username=john | coaching=pw | batch=batch_1 | status=success
