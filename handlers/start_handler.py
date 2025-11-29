@@ -12,3 +12,4 @@ async def start(update, context):
     await update.message.reply_text(
         "Welcome to the JEE Simplified !\nPlease select your coaching institute:",reply_markup=reply_markup
     )
+    
