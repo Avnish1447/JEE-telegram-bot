@@ -48,4 +48,3 @@ def update_user(telegram_id, new_data):
         users[user_id] = deepcopy(EMPTY_USER_TEMPLATE)
     users[user_id].update(new_data)
     save_users(users)
-    
