@@ -1,111 +1,85 @@
+
+
 from telegram import Update
 from telegram.ext import ContextTypes, ConversationHandler
 
 from utils.validators import user_is_eligible
-from utils.database import save_user_join, get_user
-from utils.keyboards import build_batch_keyboard
+from utils.database import get_user, update_user, increment_groups_join
 from utils.constants import COACHINGS
-
 
 
 async def batch_selected(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """
-    Called when the user selects a batch button.
-    Handles:
-    - Storing selected batch
-    - Eligibility check
-    - Creating invite link
-    - Returning final message
+    Handles when a user selects a batch:
+      - Stores selected batch in DB
+      - Checks eligibility (max 2 groups, 24h rule)
+      - Generates invite link (placeholder or real)
+      - Sends final confirmation
     """
 
     query = update.callback_query
     await query.answer()
-
     telegram_id = query.from_user.id
 
-    # Parse callback_data: format is "batch_{coaching}_{batch}"
-    # Example: "batch_pw_batch_1"
+    # Parse callback_data: "batch_<coaching>_<class>_<batch>"
+    # Example: "batch_allen_11_A" or "batch_pw_dropper_B"
     callback_data = query.data
-    parts = callback_data.split("_")
-    
-    # Extract coaching and batch from callback_data
-    # Format: batch_<coaching>_batch_<number>
-    if len(parts) >= 4 and parts[0] == "batch":
-        coaching_key = parts[1]  # e.g., "pw"
-        batch = "_".join(parts[2:])  # e.g., "batch_1"
-    else:
-        await query.edit_message_text(
-            "Invalid batch selection. Please restart with /start."
-        )
+    if not callback_data.startswith("batch_"):
+        await query.edit_message_text("Invalid batch selection. Please restart with /start.")
         return ConversationHandler.END
 
-    # Get user from database
-    user = get_user(telegram_id)
+    # Split the callback data
+    parts = callback_data.split("_")
+    if len(parts) < 4:
+        await query.edit_message_text("Invalid batch format. Please restart with /start.")
+        return ConversationHandler.END
     
+    # Extract: coaching, class, batch
+    # parts = ["batch", "allen", "11", "A"]
+    coaching_key = parts[1]
+    student_class = parts[2]
+    batch_letter = parts[3]
+    
+    # Construct full batch name for storage
+    batch_full = f"{student_class}_{batch_letter}"  # e.g., "11_A", "dropper_B"
+
+    # Fetch user from database
+    user = get_user(telegram_id)
     if not user:
-        await query.edit_message_text(
-            "User not found. Please restart with /start."
-        )
+        await query.edit_message_text("User not found. Please restart with /start.")
         return ConversationHandler.END
 
     phone = user.get("phone")
-    stored_coaching = user.get("selected_coaching")
-
-    # Verify coaching matches
-    if stored_coaching != coaching_key:
+    user_coaching = user.get("selected_coaching")
+    user_class = user.get("student_class")
+    
+    if not user_coaching or not phone or not user_class:
         await query.edit_message_text(
-            f"Coaching mismatch. Please restart with /start.\n"
-            f"Expected: {stored_coaching}, Got: {coaching_key}"
+            "Incomplete registration. Please restart with /start and complete phone verification."
         )
         return ConversationHandler.END
 
-    # Safety check
-    if not phone:
-        await query.edit_message_text(
-            "Phone number not found. Please restart with /start."
-        )
+    # Eligibility check
+    eligible, reason = user_is_eligible(phone)
+    if not eligible:
+        await query.edit_message_text(f"❌ You cannot join right now.\nReason: {reason}")
         return ConversationHandler.END
 
-    # Get coaching config
+    # Save selected batch in DB
+    update_user(telegram_id, {"selected_batch": batch_full})
+
+    # Fetch coaching config
     coaching = COACHINGS.get(coaching_key)
     if not coaching:
-        await query.edit_message_text(
-            "Invalid coaching. Please restart with /start."
-        )
+        await query.edit_message_text("Invalid coaching configuration. Please contact admin.")
         return ConversationHandler.END
-        
+
     group_id = coaching.get("group_id")
 
-    # --- Eligibility Check ---
-    eligible, reason = user_is_eligible(phone)
-
-    if not eligible:
-        await query.edit_message_text(
-            f"❌ You cannot join right now.\nReason: {reason}"
-        )
-        return ConversationHandler.END
-
-    # --- Create Invite Link ---
-    # Check if group_id is a placeholder (negative numbers starting with -100123456789x)
-    is_placeholder = str(group_id).startswith("-100123456789")
-    
-    if is_placeholder:
-        # For testing: show success message without creating real invite link
+    # Determine invite URL
+    if group_id is None or str(group_id).startswith("-100123456789"):
+        # Placeholder/testing environment
         invite_url = "https://t.me/+PLACEHOLDER_INVITE_LINK"
-        
-        # Save to DB
-        save_user_join(telegram_id, group_id)
-        
-        await query.edit_message_text(
-            f"🎉 **You're eligible!**\n\n"
-            f"📚 Coaching: *{coaching['name']}*\n"
-            f"🏷 Batch: *{batch}*\n"
-            f"📞 Phone: `{phone}`\n\n"
-            f"✅ **Registration successful!**\n\n"
-            f"⚠️ *Note: This is a test environment.*\n"
-            f"Configure real group IDs in `constants.py` to generate actual invite links.",
-            parse_mode="Markdown"
-        )
     else:
         # Production: create real invite link
         try:
@@ -114,24 +88,35 @@ async def batch_selected(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 member_limit=1
             )
             invite_url = invite_link.invite_link
-            
-            # Save to DB
-            save_user_join(telegram_id, group_id)
-            
-            await query.edit_message_text(
-                f"🎉 **You're eligible!**\n\n"
-                f"📚 Coaching: *{coaching['name']}*\n"
-                f"🏷 Batch: *{batch}*\n"
-                f"📞 Phone: `{phone}`\n\n"
-                f"Here is your **one-time invite link**:\n{invite_url}",
-                parse_mode="Markdown"
-            )
+
+            # Update user's groups_join and last_join_time
+            increment_groups_join(telegram_id)
+
         except Exception as e:
             await query.edit_message_text(
-                f"⚠️ Failed to generate invite link.\n"
-                f"Error: {str(e)}\n\n"
-                f"Please make sure the bot is admin in the group and group_id is configured correctly."
+                f"⚠️ Failed to generate invite link.\nError: {e}\n\n"
+                "Ensure the bot is admin in the group and group_id is configured correctly."
             )
             return ConversationHandler.END
+
+    # Format class and batch for display
+    class_display = {
+        "11": "Class 11",
+        "12": "Class 12",
+        "dropper": "Dropper"
+    }.get(student_class, student_class)
+    
+    batch_display = f"{class_display} - Batch {batch_letter}"
+
+    # Send final confirmation
+    await query.edit_message_text(
+        f"🎉 **You're eligible!**\n\n"
+        f"📚 Coaching: *{coaching['name']}*\n"
+        f"🎒 Class: *{class_display}*\n"
+        f"🏷 Batch: *{batch_display}*\n"
+        f"📞 Phone: `{phone}`\n\n"
+        f"Here is your **one-time invite link**:\n{invite_url}",
+        parse_mode="Markdown"
+    )
 
     return ConversationHandler.END

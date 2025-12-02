@@ -1,51 +1,53 @@
-from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
+from telegram import InlineKeyboardMarkup, Update
 from telegram.ext import ContextTypes
-
-from utils.validators import normalize_phone
-from utils.database import update_user
-from utils.keyboards import build_batch_keyboard
+from utils.validators import normalize_phone, is_valid_phone_number, user_is_eligible
+from utils.database import get_user, update_user
+from utils.keyboards import build_class_keyboard
 
 
 async def handle_phone(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """
-    Handles the phone number the user sends after selecting a coaching.
-    Validates, normalizes, stores it, and moves the user to batch selection.
+    Handles the user's phone number input.
+    Updates existing user record or creates a minimal one.
+    Checks eligibility before proceeding to class selection.
     """
-    telegram_id = update.message.from_user.id
-    user_input = update.message.text.strip()
 
-    # Validate and normalize phone
-    phone = normalize_phone(user_input)
+    phone_input = update.message.text.strip()
+    telegram_id = update.effective_user.id
+
+    # 1️⃣ Normalize and validate phone
+    phone = normalize_phone(phone_input)
     if not phone:
         await update.message.reply_text(
-            "The phone number you entered is invalid.\n"
-            "Please enter a valid 10-digit mobile number:"
+            "The phone number you entered is invalid. Please enter a valid 10-digit phone number:"
         )
         return
 
-    # Retrieve previously selected coaching
-    coaching_key = context.user_data.get("selected_coaching")
-    if not coaching_key:
+    # 2️⃣ Get user from database to check coaching selection
+    user = get_user(telegram_id)
+    if not user or not user.get("selected_coaching"):
         await update.message.reply_text(
-            "Please start again using /start.\n"
-            "Your coaching selection was not found."
+            "Error: coaching selection not found. Please /start again."
         )
         return
+    
+    selected_coaching = user.get("selected_coaching")
+    
+    # 3️⃣ Update phone number in database
+    update_user(telegram_id, {"phone": phone})
 
-    # Store user
-    update_user(
-        telegram_id,
-        {
-            "telegram_id": telegram_id,
-            "phone": phone,
-            "selected_coaching": coaching_key,
-        },
-    )
+    # 4️⃣ Check eligibility (max 2 groups, 24h cooldown)
+    eligible, reason = user_is_eligible(phone)
+    if not eligible:
+        await update.message.reply_text(reason)
+        return
 
-    # Ask the user to select batch
-    keyboard = build_batch_keyboard(coaching_key)
+    # 5️⃣ Show class selection (Class 11, 12, or Dropper)
+    keyboard = build_class_keyboard()
+    reply_markup = InlineKeyboardMarkup(keyboard)
 
     await update.message.reply_text(
-        "Great! Now select your batch:",
-        reply_markup=InlineKeyboardMarkup(keyboard)
+        "✅ Phone number recorded!\n\nPlease select your class:",
+        reply_markup=reply_markup
     )
+

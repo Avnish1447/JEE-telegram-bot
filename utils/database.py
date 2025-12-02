@@ -1,102 +1,138 @@
-import json
+import sqlite3
 from pathlib import Path
 from datetime import datetime
 
-DB_FILE = Path("data/users.json")
+DB_FILE = Path("data/users.db")
+
+# utils/database.py
+
+def init_db():
+    """Initialize the database (create tables if not exists)."""
+    conn = get_connection()
+    conn.close()
 
 
-# ----------------------------
-# Internal helpers
-# ----------------------------
-def _load_db():
+def get_connection():
+    """Create/connect to SQLite DB and ensure table exists."""
     DB_FILE.parent.mkdir(parents=True, exist_ok=True)
-
-    if not DB_FILE.exists():
-        return {}
-
-    try:
-        with open(DB_FILE, "r") as f:
-            return json.load(f)
-    except:
-        return {}
-
-
-def _save_db(data):
-    with open(DB_FILE, "w") as f:
-        json.dump(data, f, indent=4)
-
-
-# ----------------------------
-# Public functions
-# ----------------------------
-def get_user(telegram_id):
-    data = _load_db()
-    return data.get(str(telegram_id))
+    conn = sqlite3.connect(DB_FILE)
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS users (
+            telegram_id INTEGER PRIMARY KEY,
+            phone TEXT UNIQUE,
+            selected_coaching TEXT,
+            selected_batch TEXT,
+            student_class TEXT,
+            groups_join INTEGER DEFAULT 0,
+            last_join_time TEXT,
+            banned INTEGER DEFAULT 0
+        )
+    """)
+    conn.commit()
+    return conn
 
 
-def get_user_by_phone(phone):
-    """Get user by phone number."""
-    data = _load_db()
-    for user_id, user_data in data.items():
-        if user_data.get("phone") == phone:
-            return user_data
-    return None
+# --- User CRUD Operations ---
+
+def get_user(telegram_id: int):
+    conn = get_connection()
+    cur = conn.cursor()
+    cur.execute("SELECT * FROM users WHERE telegram_id = ?", (telegram_id,))
+    row = cur.fetchone()
+    conn.close()
+    if not row:
+        return None
+    # convert row to dict
+    keys = ["telegram_id", "phone", "selected_coaching", "selected_batch", "student_class", "groups_join", "last_join_time", "banned"]
+    return dict(zip(keys, row))
 
 
-def update_user(telegram_id, fields: dict):
-    """Create or update a user entry with the given fields."""
-    data = _load_db()
-    tid = str(telegram_id)
+def get_user_by_phone(phone: str):
+    conn = get_connection()
+    cur = conn.cursor()
+    cur.execute("SELECT * FROM users WHERE phone = ?", (phone,))
+    row = cur.fetchone()
+    conn.close()
+    if not row:
+        return None
+    keys = ["telegram_id", "phone", "selected_coaching", "selected_batch", "student_class", "groups_join", "last_join_time", "banned"]
+    return dict(zip(keys, row))
 
-    if tid not in data:
-        data[tid] = {
-            "phone": "",
-            "telegram_id": telegram_id,
-            "groups_join": 0,
-            "last_join_time": None,
-            "joined_group_list": [],
-            "last_invite_link": {"link": "", "chat_id": 0},
+
+
+
+def update_user(telegram_id: int, fields: dict):
+    """
+    Insert or update user.
+    If user exists, updates specified fields.
+    If user does not exist, creates new record with fields.
+    """
+    conn = get_connection()
+    cur = conn.cursor()
+
+    # Check if user exists
+    cur.execute("SELECT telegram_id FROM users WHERE telegram_id = ?", (telegram_id,))
+    if not cur.fetchone():
+        # Insert with all provided fields or defaults
+        default_values = {
+            "phone": None,
             "selected_coaching": None,
             "selected_batch": None,
-        }
-
-    data[tid].update(fields)
-    _save_db(data)
-
-
-def save_user_join(telegram_id, chat_id):
-    """
-    Called when a user successfully joins a Telegram group.
-    Updates:
-      - groups_join += 1
-      - last_join_time = now
-      - joined_group_list.append(chat_id)
-    """
-    data = _load_db()
-    tid = str(telegram_id)
-
-    if tid not in data:
-        # should never happen normally
-        data[tid] = {
-            "phone": "",
-            "telegram_id": telegram_id,
+            "student_class": None,
             "groups_join": 0,
             "last_join_time": None,
-            "joined_group_list": [],
-            "last_invite_link": {"link": "", "chat_id": 0},
-            "selected_coaching": None,
-            "selected_batch": None,
+            "banned": 0
         }
+        default_values.update(fields)
+        cur.execute("""
+            INSERT INTO users (telegram_id, phone, selected_coaching, selected_batch, student_class, groups_join, last_join_time, banned)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        """, (
+            telegram_id,
+            default_values["phone"],
+            default_values["selected_coaching"],
+            default_values["selected_batch"],
+            default_values["student_class"],
+            default_values["groups_join"],
+            default_values["last_join_time"],
+            default_values["banned"]
+        ))
+    else:
+        # Update only specified fields
+        for key, value in fields.items():
+            if key not in {"phone", "selected_coaching", "selected_batch", "student_class", "groups_join", "last_join_time", "banned"}:
+                continue
+            cur.execute(f"UPDATE users SET {key} = ? WHERE telegram_id = ?", (value, telegram_id))
 
-    user = data[tid]
+    conn.commit()
+    conn.close()
 
-    # update fields
-    user["groups_join"] = user.get("groups_join", 0) + 1
-    user["last_join_time"] = datetime.utcnow().isoformat()
 
-    jlist = user.get("joined_group_list", [])
-    if chat_id not in jlist:
-        jlist.append(chat_id)
-    user["joined_group_list"] = jlist
 
-    _save_db(data)
+
+def record_join(telegram_id: int):
+    """Increment user's groups_join and set last_join_time."""
+    conn = get_connection()
+    cur = conn.cursor()
+    now = datetime.utcnow().isoformat()
+    cur.execute("""
+        UPDATE users
+        SET groups_join = COALESCE(groups_join, 0) + 1,
+            last_join_time = ?
+        WHERE telegram_id = ?
+    """, (now, telegram_id))
+    conn.commit()
+    conn.close()
+
+def increment_groups_join(telegram_id: int):
+    """Increment groups_join by 1 and update last_join_time."""
+    conn = get_connection()
+    cur = conn.cursor()
+    now = datetime.utcnow().isoformat()
+    # Use COALESCE to handle NULL values
+    cur.execute(
+        "UPDATE users SET groups_join = COALESCE(groups_join, 0) + 1, last_join_time = ? WHERE telegram_id = ?",
+        (now, telegram_id)
+    )
+    conn.commit()
+    conn.close()

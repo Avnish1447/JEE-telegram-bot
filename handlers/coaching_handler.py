@@ -10,7 +10,28 @@
 #     # Ask user to enter phone number:
 #     await query.message.reply_text("Please enter your 10-digit phone number:")
 
+
+#-----------------------------------------------------------------------------
+
+# from telegram import InlineKeyboardButton, InlineKeyboardMarkup
+
+# async def coaching_selected(update, context):
+#     query = update.callback_query
+#     await query.answer()
+
+#     # Extract coaching key from callback_data
+#     raw_key = query.data               # e.g. "coaching_pw"
+#     coaching_key = raw_key.replace("coaching_", "")  # "pw"
+
+#     # Store clean coaching key
+#     context.user_data["selected_coaching"] = coaching_key
+
+#     # Ask for phone number
+#     await query.message.reply_text("Please enter your 10-digit phone number:")
+#-------------------------------------------------------------------------------------------------
+
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup
+from utils.database import update_user, get_user
 
 async def coaching_selected(update, context):
     query = update.callback_query
@@ -20,8 +41,18 @@ async def coaching_selected(update, context):
     raw_key = query.data               # e.g. "coaching_pw"
     coaching_key = raw_key.replace("coaching_", "")  # "pw"
 
-    # Store clean coaching key
-    context.user_data["selected_coaching"] = coaching_key
+    telegram_id = update.effective_user.id
 
-    # Ask for phone number
+    # 1. Check if user exists
+    user = get_user(telegram_id)
+
+    # 2. Create or update user
+    if user:
+        update_user(telegram_id, {"selected_coaching": coaching_key})
+    else:
+        # Optional: store minimal data until phone is provided
+        update_user(telegram_id, {"telegram_id": telegram_id, "selected_coaching": coaching_key})
+
+    # 3. Ask for phone number
     await query.message.reply_text("Please enter your 10-digit phone number:")
+#-----------------------------------------------------------------------------
