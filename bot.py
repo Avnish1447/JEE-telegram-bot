@@ -47,9 +47,9 @@ def main():
 
     
     # 4️⃣ Phone Number Handler
-    # (Runs ONLY after coaching is chosen)
+    # (Runs ONLY in private chats after coaching is chosen)
     
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_phone))
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND & filters.ChatType.PRIVATE, handle_phone))
 
     
     # 5️⃣ Handle New Members (Invite Join)
