@@ -64,8 +64,12 @@ async def class_selected(update: Update, context: ContextTypes.DEFAULT_TYPE):
     group_id = class_data.get("group_id")
     
     # Determine invite URL
-    # Check if this is a placeholder group_id (all placeholders start with -100123456789)
-    is_placeholder = group_id is None or (group_id < 0 and str(group_id).startswith("-100123456789"))
+    # Check if this is a placeholder group_id (range: -1001234567890 to -1001234567999)
+    # Note: For negative numbers, -1001234567999 < -1001234567890
+    is_placeholder = group_id is None or (-1001234567999 <= group_id <= -1001234567890)
+    
+    # Debug logging
+    print(f"DEBUG: group_id={group_id}, is_placeholder={is_placeholder}")
     
     if is_placeholder:
         # Placeholder/testing environment - don't try to create real invite link
