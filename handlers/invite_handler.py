@@ -1,10 +1,10 @@
 from telegram import Update
 from telegram.ext import ContextTypes
-from utils.database import get_user, update_user
+from utils.database import get_user, update_user, increment_groups_join
 from utils.database import get_user_by_phone 
 
 from utils.security import kick_user, safe_notify
-from utils.constants import COACHINGS, INVITE_MAP
+from utils.constants import COACHINGS, get_coaching_by_group_id
 from utils.logging_utils import log_join_attempt
 from datetime import datetime
 
@@ -12,7 +12,7 @@ from datetime import datetime
 async def handle_new_member(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """
     Triggered whenever someone joins a group.
-    Validates the user based on the invite link & stored bot data.
+    Validates the user based on their stored coaching/class and the group they're joining.
     """
 
     message = update.message
@@ -23,22 +23,22 @@ async def handle_new_member(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     new_member = message.new_chat_members[0]
     telegram_id = new_member.id
-    invite_link_used = message.invite_link
+    group_id = chat.id
 
-    # 1. Ensure invite link exists
-    if invite_link_used is None:
-        await kick_user(chat.id, telegram_id, context)
-        return
-
-    invite_key = invite_link_used.invite_link
-
-    # 2. Map invite → (coaching, batch)
-    coaching_key, batch_key = INVITE_MAP.get(invite_key, (None, None))
+    # 1. Map group_id to coaching and class
+    coaching_key, class_key = get_coaching_by_group_id(group_id)
+    
     if coaching_key is None:
+        # Group not configured in COACHINGS
         await kick_user(chat.id, telegram_id, context)
+        await safe_notify(
+            telegram_id,
+            "This group is not configured in the system. Please contact admin.",
+            context
+        )
         return
 
-    # 3. Load user from DB
+    # 2. Load user from DB
     user = get_user(telegram_id)
 
     # Log attempt
@@ -46,11 +46,11 @@ async def handle_new_member(update: Update, context: ContextTypes.DEFAULT_TYPE):
         telegram_id=telegram_id,
         username=new_member.username,
         coaching=coaching_key,
-        batch=batch_key,
+        batch=class_key,  # Using class_key as batch for logging compatibility
         status="attempt"
     )
 
-    # 4. Validation
+    # 3. Validation
     if not user:
         await kick_user(chat.id, telegram_id, context)
         await safe_notify(
@@ -80,6 +80,16 @@ async def handle_new_member(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         return
 
+    if user.get("student_class") != class_key:
+        await kick_user(chat.id, telegram_id, context)
+        await safe_notify(
+            telegram_id,
+            f"You tried joining a class you're not approved for.\n"
+            f"Assigned class: {user.get('student_class')}",
+            context
+        )
+        return
+
     if user.get("banned", 0):
         await kick_user(chat.id, telegram_id, context)
         await safe_notify(
@@ -89,22 +99,28 @@ async def handle_new_member(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         return
 
-    # 5. Passed all checks → allow
+    # 4. Passed all checks → allow
+    class_display = {
+        "11": "Class 11",
+        "12": "Class 12",
+        "dropper": "Dropper"
+    }.get(class_key, class_key)
+    
     await message.reply_text(
         f"✨ Welcome {new_member.first_name}!\n"
         f"Coaching: {COACHINGS[coaching_key]['name']}\n"
-        f"Batch: {batch_key}\n"
+        f"Class: {class_display}\n"
         "You have been successfully verified."
     )
 
-    # Update DB: increment last join time, if needed
-    update_user(telegram_id, {"last_join_time": datetime.utcnow().isoformat()})
+    # 5. Update DB: increment groups_join counter and update last join time
+    increment_groups_join(telegram_id)
 
     # Log success
     log_join_attempt(
         telegram_id=telegram_id,
         username=new_member.username,
         coaching=coaching_key,
-        batch=batch_key,
+        batch=class_key,
         status="success"
     )

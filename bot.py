@@ -13,7 +13,6 @@ from handlers.coaching_handler import coaching_selected
 from handlers.phone_handler import handle_phone
 from handlers.invite_handler import handle_new_member
 from handlers.class_handler import class_selected
-from handlers.batch_handler import batch_selected
 
 from utils.database import init_db
 init_db()
@@ -45,13 +44,6 @@ def main():
     # 3️⃣ Class Selection Handler (Class 11, 12, or Dropper)
     
     app.add_handler(CallbackQueryHandler(class_selected, pattern=r"^class_"))
-
-    
-    # 4️⃣ Batch Selection Handler
-    # (IMPORTANT: Must be ABOVE phone handler)
-    
-    app.add_handler(CallbackQueryHandler(batch_selected, pattern=r"^batch_"))
-
 
     
     # 4️⃣ Phone Number Handler
