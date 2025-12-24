@@ -10,6 +10,8 @@ A Telegram bot that manages controlled access to JEE coaching-related Telegram g
 - 🎫 **One-Time Invite Links**: Generates single-use invite links for verified users
 - 📊 **Join Logging**: Tracks all join attempts (success/failure) in JSON and text formats
 - ✅ **Group Verification**: Validates users when they join via invite links
+- 🎒 **Class Selection**: Support for Class 11, Class 12, and Dropper students
+- 👨‍💼 **Admin Commands**: Track user statistics and daily registrations (admin-only)
 
 ---
 
@@ -92,12 +94,13 @@ You can customize batch names in `utils/constants.py`:
 
 1. **Start**: User sends `/start` to the bot
 2. **Select Coaching**: User chooses their coaching institute (PW, Allen, etc.)
-3. **Phone Verification**: User enters their 10-digit mobile number
-4. **Batch Selection**: User selects their batch
-5. **Eligibility Check**: Bot verifies user can join (max 2 groups, 24hr cooldown)
-6. **Invite Link**: Bot generates a one-time invite link
-7. **Join Group**: User clicks link and joins the group
-8. **Verification**: Bot verifies user when they join via the invite link
+3. **Phone Verification**: User enters their 10-digit mobile number (returning users skip this)
+4. **Class Selection**: User selects their class (11, 12, or Dropper)
+5. **Batch Selection**: User selects their batch
+6. **Eligibility Check**: Bot verifies user can join (max 2 groups, 24hr cooldown)
+7. **Invite Link**: Bot generates a one-time invite link
+8. **Join Group**: User clicks link and joins the group
+9. **Verification**: Bot verifies user when they join via the invite link
 
 ### Access Restrictions
 
@@ -136,25 +139,28 @@ The bot enforces the following rules:
 ```
 telegram-access-bot/
 ├── bot.py                      # Main bot entry point
+├── config.py                   # Admin configuration
 ├── requirements.txt            # Python dependencies
 ├── README.md                   # This file
+├── migrate_add_created_at.py   # Database migration script
 ├── data/                       # Data storage (auto-created)
-│   ├── users.json             # User database
-│   ├── join_logs.json         # Structured join logs
-│   └── join_logs.txt          # Human-readable logs
+│   └── users.db               # SQLite user database
 ├── handlers/                   # Command and callback handlers
 │   ├── start_handler.py       # /start command
 │   ├── coaching_handler.py    # Coaching selection
 │   ├── phone_handler.py       # Phone number validation
+│   ├── class_handler.py       # Class selection (11/12/Dropper)
 │   ├── batch_handler.py       # Batch selection & invite links
-│   └── invite_handler.py      # New member verification
+│   ├── invite_handler.py      # New member verification
+│   └── admin_handler.py       # Admin commands
 └── utils/                      # Utility modules
     ├── constants.py           # Coaching configs & invite mappings
-    ├── database.py            # User data management
+    ├── database.py            # SQLite database operations
     ├── validators.py          # Phone & eligibility validation
     ├── keyboards.py           # Inline keyboard builders
     ├── security.py            # Kick/ban functions
     ├── logging_utils.py       # Join attempt logging
+    ├── admin.py               # Admin authentication
     └── storage.py             # Alternative storage functions
 ```
 
@@ -162,38 +168,57 @@ telegram-access-bot/
 
 ## Database Schema
 
-User data is stored in `data/users.json`:
+User data is stored in SQLite database `data/users.db`:
 
-```json
-{
-  "123456789": {
-    "phone": "9876543210",
-    "telegram_id": 123456789,
-    "groups_join": 1,
-    "last_join_time": "2025-11-29T12:30:00",
-    "joined_group_list": [-1001234567890],
-    "last_invite_link": {"link": "", "chat_id": 0},
-    "selected_coaching": "pw",
-    "selected_batch": "batch_1"
-  }
-}
+**Users Table:**
+- `telegram_id` (INTEGER PRIMARY KEY) - User's Telegram ID
+- `phone` (TEXT UNIQUE) - Verified phone number
+- `selected_coaching` (TEXT) - Chosen coaching institute
+- `selected_batch` (TEXT) - Selected batch
+- `student_class` (TEXT) - Class (11, 12, or dropper)
+- `groups_join` (INTEGER) - Number of groups joined
+- `last_join_time` (TEXT) - Last group join timestamp
+- `banned` (INTEGER) - Ban status (0 or 1)
+- `created_at` (TIMESTAMP) - Registration timestamp
+
+---
+
+## Admin Commands
+
+**Admin-only commands** for tracking user statistics (configured in `config.py`):
+
+### `/stats`
+Quick overview of user statistics:
+- Total registered users
+- Users registered today
+- New users this week
+
+### `/daily_stats [days]`
+Detailed daily registration breakdown with visual charts:
+- Shows last N days (default: 7, max: 30)
+- Bar chart visualization
+- Total and average calculations
+
+**Example:**
+```
+/stats
+/daily_stats
+/daily_stats 14
+```
+
+**Admin Configuration:**
+Add your Telegram user ID to `config.py`:
+```python
+ADMIN_USER_IDS = [
+    1163516550  # Your admin user ID
+]
 ```
 
 ---
 
 ## Logs
 
-### Join Logs (JSON)
-`data/join_logs.json` - Structured logs for programmatic access
-
-### Join Logs (Text)
-`data/join_logs.txt` - Human-readable logs
-
-Example:
-```
-2025-11-29 18:30:00 | user_id=123456789 | username=john | coaching=pw | batch=batch_1 | status=attempt
-2025-11-29 18:30:01 | user_id=123456789 | username=john | coaching=pw | batch=batch_1 | status=success
-```
+Join attempts are logged in `logs/` directory with timestamps and status.
 
 ---
 
