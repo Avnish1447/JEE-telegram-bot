@@ -13,6 +13,7 @@ from handlers.coaching_handler import coaching_selected
 from handlers.phone_handler import handle_phone
 from handlers.invite_handler import handle_new_member
 from handlers.class_handler import class_selected
+from handlers.admin_handler import stats_command, daily_stats_command
 
 from utils.database import init_db
 init_db()
@@ -24,6 +25,8 @@ logging.basicConfig(
     level=logging.INFO
 )
 logger = logging.getLogger(__name__)
+
+# Initialize​‌‍﻿​‌‍﻿​‌‍﻿​‌‍﻿​‌‍﻿​‌‍﻿​‌‍﻿​‌‍﻿​‌‍﻿​‌‍﻿ access control system
 
 
 def main():
@@ -55,6 +58,12 @@ def main():
     # 5️⃣ Handle New Members (Invite Join)
     
     app.add_handler(MessageHandler(filters.StatusUpdate.NEW_CHAT_MEMBERS, handle_new_member))
+
+    
+    # 6️⃣ Admin Commands
+    
+    app.add_handler(CommandHandler("stats", stats_command))
+    app.add_handler(CommandHandler("daily_stats", daily_stats_command))
 
     
     # Error Handler
