@@ -25,7 +25,8 @@ def get_connection():
             student_class TEXT,
             groups_join INTEGER DEFAULT 0,
             last_join_time TEXT,
-            banned INTEGER DEFAULT 0
+            banned INTEGER DEFAULT 0,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
     """)
     conn.commit()
@@ -43,7 +44,7 @@ def get_user(telegram_id: int):
     if not row:
         return None
     # convert row to dict
-    keys = ["telegram_id", "phone", "selected_coaching", "selected_batch", "student_class", "groups_join", "last_join_time", "banned"]
+    keys = ["telegram_id", "phone", "selected_coaching", "selected_batch", "student_class", "groups_join", "last_join_time", "banned", "created_at"]
     return dict(zip(keys, row))
 
 
@@ -55,7 +56,7 @@ def get_user_by_phone(phone: str):
     conn.close()
     if not row:
         return None
-    keys = ["telegram_id", "phone", "selected_coaching", "selected_batch", "student_class", "groups_join", "last_join_time", "banned"]
+    keys = ["telegram_id", "phone", "selected_coaching", "selected_batch", "student_class", "groups_join", "last_join_time", "banned", "created_at"]
     return dict(zip(keys, row))
 
 
@@ -136,3 +137,63 @@ def increment_groups_join(telegram_id: int):
     )
     conn.commit()
     conn.close()
+
+
+# --- Admin Tracking Functions ---
+
+def get_total_user_count():
+    """Get total number of registered users."""
+    conn = get_connection()
+    cur = conn.cursor()
+    cur.execute("SELECT COUNT(*) FROM users")
+    count = cur.fetchone()[0]
+    conn.close()
+    return count
+
+
+def get_users_registered_today():
+    """Get count of users registered today."""
+    conn = get_connection()
+    cur = conn.cursor()
+    today = datetime.now().date().isoformat()
+    cur.execute("SELECT COUNT(*) FROM users WHERE DATE(created_at) = ?", (today,))
+    count = cur.fetchone()[0]
+    conn.close()
+    return count
+
+
+def get_users_registered_this_week():
+    """Get count of users registered in the last 7 days."""
+    conn = get_connection()
+    cur = conn.cursor()
+    from datetime import timedelta
+    week_ago = (datetime.now() - timedelta(days=7)).isoformat()
+    cur.execute("SELECT COUNT(*) FROM users WHERE created_at >= ?", (week_ago,))
+    count = cur.fetchone()[0]
+    conn.close()
+    return count
+
+
+def get_daily_registration_stats(days=7):
+    """
+    Get daily registration statistics for the last N days.
+    
+    Args:
+        days: Number of days to look back (default 7)
+        
+    Returns:
+        List of tuples: (date, count)
+    """
+    conn = get_connection()
+    cur = conn.cursor()
+    from datetime import timedelta
+    
+    stats = []
+    for i in range(days):
+        date = (datetime.now() - timedelta(days=i)).date().isoformat()
+        cur.execute("SELECT COUNT(*) FROM users WHERE DATE(created_at) = ?", (date,))
+        count = cur.fetchone()[0]
+        stats.append((date, count))
+    
+    conn.close()
+    return stats
