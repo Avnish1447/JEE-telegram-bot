@@ -36,7 +36,7 @@ async def stats_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"👥 Total Users: **{total_users}**\n"
         f"📅 Registered Today: **{today_users}**\n"
         f"🆕 New This Week: **{week_users}**\n\n"
-        f"_Last updated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}_"
+        f"_Last updated: {datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S')} UTC_"
     )
     
     await update.message.reply_text(message, parse_mode="Markdown")
